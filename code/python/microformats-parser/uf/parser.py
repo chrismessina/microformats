@@ -9,6 +9,7 @@ def get_abs_path(file_name):
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), file_name)
 
 class Parser(object):
+    filters = []
     def _open_stream(self, source):
         """
         _open_stream takes either a string or a file like object, and returns the body
@@ -24,14 +25,6 @@ class Parser(object):
             else:
                 stream = str(source)
         return stream
-
-class XHTMLParser(Parser):
-    xsl_file = ""
-    filters = []
-    
-    def __init__(self):
-        self.add_filter(self._transform())
-        self.add_filter(self._serialize())
 
     def parse(self, stream):
         """
@@ -51,6 +44,13 @@ class XHTMLParser(Parser):
                 return _run_filters(filters, filter(input)) 
             return input
         return _run_filters(self.filters, input)
+
+class XHTMLParser(Parser):
+    xsl_file = ""
+    
+    def __init__(self):
+        self.add_filter(self._transform())
+        self.add_filter(self._serialize())
 
     def _serialize(self):
         """
@@ -130,19 +130,24 @@ class LinkParser(Parser):
     """
     properties = set()
 
+    def __init__(self):
+        self.add_filter(self._retrieve_links())
+        self.add_filter(self._transform())
+
     # it would be nice to be able to send in a Beautiful SoupStrainer
     # so we don't parse the whole page everytime
-    def parse(self, stream):
-        return self.get_links(self._transform(self._open_stream(stream)))
     
-    def _transform(self, stream):
-        return BeautifulSoup(self._open_stream(stream))
+    def _transform(self):
+        def soup_filter(stream):
+            return BeautifulSoup(stream)
+        return soup_filter
 
     def attr_filter(self, prop):
         """
         a factory for creating attribute filters.
         Used to figure out if a tag has particular attribute values.
         """
+                    
         return lambda attr: attr is not None\
             and prop in attr.split(' ')
 
@@ -160,23 +165,25 @@ class LinkParser(Parser):
         """
         return soup.findAll('a', {'rel': self.attr_filter(prop), 'href': self.attr_not_empty_filter()})
     
-    def get_links(self, soup):
+    def _retrieve_links(self):
         """
         returns a dictionary where the keys are properties of the spec
         and the values are lists of urls that were founds for that.
         """
-        links = {}
+        def _parse_links_filter(soup):
+            links = {}
 
-        for prop in self.properties:
-            retrieved_links = self.get_links_with_property(soup, prop)
-            links[prop] = []
+            for prop in self.properties:
+                retrieved_links = self.get_links_with_property(soup, prop)
+                links[prop] = []
             
-            for link in retrieved_links:
-                links[prop].append(link.get('href'))
+                for link in retrieved_links:
+                    links[prop].append(link.get('href'))
 
-            if links[prop] == []:
-                del links[prop]
-        return links
+                if links[prop] == []:
+                    del links[prop]
+            return links
+        return _parse_links_filter
 
 class XFN(LinkParser):
     """
