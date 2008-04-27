@@ -47,6 +47,7 @@ class Parser(object):
 
 class XHTMLParser(Parser):
     xsl_file = ""
+    root_element = ""
     
     def __init__(self):
         self.add_filter(self._transform())
@@ -70,10 +71,10 @@ class XHTMLParser(Parser):
             hCal is an implimentation of vCal, the transform here turns an xmlized
             hCal into a properly formed vCal
         """
-        def xsl_filter(xml):
+        def xsl_filter(xml_etree):
             xsl = etree.parse(self.xsl_file)
             transform = etree.XSLT(xsl)
-            return transform(xml)
+            return transform(xml_etree)
         return xsl_filter
 
     def _cut_xml(self):
@@ -84,9 +85,13 @@ class XHTMLParser(Parser):
         Example.
             A single html document might include many hCards, this filter will take the
             xmlized form of that document and return a list of those hCards as xml fragments
+        
+        This should go /before/ the _transform filter but /after/ the serialize
         """
-        def xpath_filter(stream):
-            pass
+        def xpath_filter(xml_etree):
+            xpath = "//*[contains(@class,'%s')]" % (self.root_element,)
+            return xml_etree.xpath(xpath)
+        return xpath_filter
 
 class vObjParser(XHTMLParser):
     """
@@ -101,18 +106,21 @@ class hCard(vObjParser):
     """
     Parses hCards in vCards in vObject
     """
+    root_element = "vcard"
     xsl_file = get_abs_path("./xsl/xhtml2vcard.xsl")
 
 class hCal(vObjParser):
     """
     Parses hCals into vCals in vObject
     """
+    root_element = "vcal"
     xsl_file = get_abs_path("./xsl/xhtml2vcal.xsl")
 
 class hAtom(XHTMLParser):
     """
     Parses hAtoms into Atoms in feedparser
     """
+    root_element = "hentry"
     xsl_file = get_abs_path("./xsl/hAtom2Atom.xsl")
 
     def __init__(self):
@@ -161,7 +169,7 @@ class LinkParser(Parser):
 
     def get_links_with_property(self, soup, prop):
         """
-        returns urls with certain rel values
+        returns links with certain rel values
         """
         return soup.findAll('a', {'rel': self.attr_filter(prop), 'href': self.attr_not_empty_filter()})
     
